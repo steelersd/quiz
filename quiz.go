@@ -3,21 +3,40 @@
 package main
 
 import (
-	// "flag"
 	"encoding/csv"
+	"flag"
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"os"
 	"strconv"
+	"time"
 )
 
+type options struct {
+	shuffle bool
+	foo     bool
+}
+
 func main() {
+	options := handleOptions()
 	questions := getQuestions("problems.csv")
+	if options.shuffle {
+		questions = shuffle(questions)
+	}
 
 	updatedQuestions := askQuestions(questions)
 	fmt.Printf("%+v\n", correctAnswers(updatedQuestions))
 	printScore(questions, correctAnswers(updatedQuestions))
+}
+
+func handleOptions() options {
+	shuffle := flag.Bool("shuffle", false, "Suffle questions")
+	foo := flag.Bool("foo", false, "foo")
+	flag.Parse()
+
+	return options{shuffle: *shuffle, foo: *foo}
 }
 
 func printScore(questionsAsked []QandA, questionsCorrect []QandA) {
@@ -27,25 +46,51 @@ func printScore(questionsAsked []QandA, questionsCorrect []QandA) {
 func askQuestions(questions []QandA) []QandA {
 	var updatedQuestions []QandA
 
+	timeout := time.After(3 * time.Second)
+adam:
 	for _, question := range questions {
-		fmt.Print(question.question + ": ")
-		var input string
+		done := make(chan bool)
 
-		_, err := fmt.Scanln(&input)
-		if err != nil {
-			log.Fatal(err)
+		go func(question *QandA) {
+			val := ask(*question)
+			question.setAnswer(val)
+			done <- true
+		}(&question)
+
+		select {
+		case <-done:
+			fmt.Println(question)
+		case <-timeout:
+			fmt.Println("Sorry, out of time")
+			break adam
 		}
-		question.setAnswer(input)
 		updatedQuestions = append(updatedQuestions, question)
-		// fmt.Printf("question: %v answer: %v, %v \n", question.question, question.answer, question.correct)
 	}
 	return updatedQuestions
+
+}
+
+func ask(question QandA) string {
+	fmt.Print(question.question + ": ")
+	var input string
+
+	_, err := fmt.Scanln(&input)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return input
 }
 
 func getQuestions(csvFileName string) []QandA {
-	csvFile, _ := os.Open(csvFileName)
+	csvFile, err := os.Open(csvFileName)
+	if err != nil {
+		log.Fatal(err)
+	}
 	r := csv.NewReader(csvFile)
 
+	// Since we know the leng
+	//
 	var questions []QandA
 
 	for {
@@ -98,4 +143,10 @@ func filter(vs []QandA, f func(QandA) bool) []QandA {
 		}
 	}
 	return vsf
+}
+
+func shuffle(a []QandA) []QandA {
+	rand.Seed(time.Now().UnixNano())
+	rand.Shuffle(len(a), func(i, j int) { a[i], a[j] = a[j], a[i] })
+	return a
 }
